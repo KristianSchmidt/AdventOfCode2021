@@ -4,14 +4,29 @@ open System
 
 Environment.CurrentDirectory <- __SOURCE_DIRECTORY__
 
-let data = Helpers.Web.getInput 7
+let data =
+    Helpers.Web.getInput 7
+    |> Array.head
+    |> Helpers.split ","
+    |> Array.map int
 
-let ans1 = data
+let min = Array.min data
+let max = Array.max data
+
+let ans1 = 
+    [|min .. max|]
+    |> Array.map (fun i -> data |> Array.sumBy (fun j -> abs (i - j)))
+    |> Array.min
 
 ans1
 
 /// Part 2
 
-let ans2 = data
+let cost i = Array.sum [|1 .. i|]
+
+let ans2 =
+    [|min .. max|]
+    |> Array.map (fun i -> data |> Array.sumBy (fun j -> cost (abs (i - j))))
+    |> Array.min
 
 ans2

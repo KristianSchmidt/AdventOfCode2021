@@ -7,9 +7,7 @@ Environment.CurrentDirectory <- __SOURCE_DIRECTORY__
 let data =
     Helpers.Web.getInput 9
     |> Array.map (fun s -> s.ToCharArray() |> Array.map (string >> int))
-    |> Array.mapi (fun y a -> a |> Array.mapi (fun x e -> ((x,y),e)))
-    |> Array.collect id
-    |> Map.ofArray
+    |> Helpers.toGridMap
 
 let neighbors (x,y) =
     [|(x,y-1); (x,y+1);(x+1,y);(x-1,y)|]

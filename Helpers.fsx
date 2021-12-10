@@ -65,6 +65,15 @@ let product (items : 'a list) count =
 
     f count [[]]
 
+let toGrid a =
+    a
+    |> Array.mapi (fun y a -> a |> Array.mapi (fun x e -> ((x,y),e)))
+    |> Array.collect id
+
+let toGridMap a =
+    toGrid a
+    |> Map.ofArray
+
 let rec gcd x y = if y = 0L then abs x else gcd y (x % y)
 
 let lcm x y = x * y / (gcd x y)

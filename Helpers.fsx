@@ -133,8 +133,8 @@ module Map =
 module Dijkstra =
     let private minDistance (dist : int array) (sptSet : bool array) =
         [| 0 .. (dist.Length - 1) |]
-        |> Array.filter (fun i -> sptSet.[i] = false)
-        |> Array.minBy (fun i -> dist.[i])
+        |> Seq.filter (fun i -> sptSet.[i] = false)
+        |> Seq.minBy (fun i -> dist.[i])
     
     let dijkstra (graph : Map<(int*int)*(int*int),bool>) (src : int*int) = 
         let vertices = graph
@@ -193,6 +193,73 @@ module Dijkstra =
                     // from src to v through u is smaller 
                     // than current value of dist[v]
                     dist.[v] <- newDist
+                    
+        [| 0 .. V-1 |]
+        |> Array.map (fun i -> edgeFromIdx i, dist.[i])
+        |> Map.ofArray
+
+    let dijkstra2 (graph : Map<(int*int)*(int*int),int>) (src : int*int) = 
+        let vertices = graph
+                       |> Map.toArray
+                       |> Array.collect (fun ((k1,k2),_) -> [|k1;k2|])
+                       |> Array.distinct
+                       |> Array.sort
+        
+        let vMap = vertices |> Array.mapi (fun i e -> e,i) |> Map.ofArray
+        let iMap = vertices |> Array.mapi (fun i e -> i,e) |> Map.ofArray
+        let edgeFromIdx v = Map.find v iMap
+        let hasEdge u v =
+            let uE = edgeFromIdx u
+            let vE = edgeFromIdx v
+            Map.containsKey (uE,vE) graph
+        let distance u v =
+            let uE = edgeFromIdx u
+            let vE = edgeFromIdx v
+            Map.tryFind (uE,vE) graph |> Option.defaultValue 10_000
+        let V = vertices.Length
+        printfn "V: %i" V
+
+        // The output array. dist[i] 
+        // will hold the shortest 
+        // distance from src to i 
+        let dist = Array.replicate V Int32.MaxValue
+
+        // sptSet[i] will true if vertex 
+        // i is included in shortest path 
+        // tree or shortest distance from 
+        // src to i is finalized 
+        let sptSet = Array.replicate V false 
+  
+        // Distance of source vertex 
+        // from itself is always 0
+        let srcIdx = Map.find src vMap
+        dist.[srcIdx] <- 0
+  
+        // Find shortest path for all vertices 
+        for count in 0 .. V - 1 do 
+            if (count % 500 = 0) then printfn "v: %i" count
+            // Pick the minimum distance vertex 
+            // from the set of vertices not yet 
+            // processed. u is always equal to 
+            // src in first iteration. 
+            let u = minDistance dist sptSet 
+  
+            // Mark the picked vertex as processed 
+            sptSet.[u] <- true 
+  
+            // Update dist value of the adjacent 
+            // vertices of the picked vertex. 
+            for v in 0 .. (V - 1) do
+                if (sptSet.[v] = false) then
+                    if (hasEdge u v && dist.[u] <> Int32.MaxValue) then
+                        let newDist = dist.[u] + (distance u v)
+                        if (newDist < dist.[v]) then
+                            // Update dist[v] only if is not in 
+                            // sptSet, there is an edge from u 
+                            // to v, and total weight of path 
+                            // from src to v through u is smaller 
+                            // than current value of dist[v]
+                            dist.[v] <- newDist
                     
         [| 0 .. V-1 |]
         |> Array.map (fun i -> edgeFromIdx i, dist.[i])

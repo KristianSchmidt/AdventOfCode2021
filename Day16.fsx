@@ -35,22 +35,11 @@ let parseLiteral (arr : char array) idx =
 
     data', nextIdx
 
-[|0..1|]
-
 let parseOperatorType0 (arr : char array) idx =
     let length = arr[idx..idx+14] |> (fun arr -> String.Join("", arr)) |> binToInt
     
-    let packetsOfSize11 = (length / 11) - 1
-    let lastSize = 11 + (length % 11)
-    printfn "%i - %i" packetsOfSize11 lastSize
-
     let subStartIdx = idx+15
     
-    let packetSizes =
-        Array.create packetsOfSize11 11
-        |> Array.append [|lastSize|]
-        |> Array.rev
-
     subStartIdx + length - 1
 
 parseOperatorType0 ("0000000000110111101000101001010010001001000000000".ToCharArray()) 0
@@ -61,8 +50,13 @@ let parseOperatorType1 (arr : char array) idx =
 
     idx + 11 + (numSubPackets * 11) - 1
 
+type EndCondition =
+    | Count of int
+    | Bits of int
+
 type X =
     | Literal of int * int * int
+    | Operator of int * int * X list
     | Noop
 
 let parse (arr : char array) idx' =
@@ -81,6 +75,8 @@ let parse (arr : char array) idx' =
                 let lengthTypeId = arr[idx+6]
                 match lengthTypeId with
                 | '0' ->
+                    let length = arr[idx+7..idx+7+14] |> (fun arr -> String.Join("", arr)) |> binToInt
+                    let cond = Bits length
                     let newIdx = parseOperatorType0 arr (idx+7)
                     Noop, newIdx
                 | '1' ->

@@ -44,7 +44,10 @@ ans1
 /// Part 2
 
 let incomplete =
-    data |> Array.map (fun arr -> arr, getCorrupt arr) |> Array.filter (snd >> ((=)0)) |> Array.map fst
+    data
+    |> Array.map (fun arr -> arr, getCorrupt arr)
+    |> Array.filter (snd >> ((=)0))
+    |> Array.map fst
 
 let getCorrupt2 (arr : string array) =
     let rec f opens lst =

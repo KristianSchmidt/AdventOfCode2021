@@ -22,7 +22,7 @@ ans1
 
 /// Part 2
 
-let cost i = Array.sum [|1 .. i|]
+let cost i = i * (i+1) / 2
 
 let ans2 =
     [|min .. max|]

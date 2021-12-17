@@ -6,13 +6,12 @@ Environment.CurrentDirectory <- __SOURCE_DIRECTORY__
 
 let data = Helpers.Web.getInput 16
 
+let toString (arr : char array) = String.Join("", arr)
+
 let conv (c : char) =
     Convert.ToString(Convert.ToInt32(string c, 16),2).PadLeft(4).Replace(" ", "0")
     
-let extraForMul4 (i : int) =
-    (4 - (i % 4)) % 4
-
-let binToInt (s : string) = Convert.ToInt32(s,2)
+let binToInt (s : string) = Convert.ToInt64(s,2)
 
 let parseLiteral (arr : char array) idx =
     let rec f idx' grps =
@@ -29,95 +28,116 @@ let parseLiteral (arr : char array) idx =
         |> List.rev
         |> List.map (Array.skip 1 >> String)
         |> (fun lst -> String.Join("", lst))
-        |> (fun s -> Convert.ToInt32(s,2))
+        |> (fun s -> Convert.ToInt64(s,2))
 
-    let nextIdx = extraForMul4 (endIdx - (idx + 6)) + endIdx
-
-    data', nextIdx
-
-let parseOperatorType0 (arr : char array) idx =
-    let length = arr[idx..idx+14] |> (fun arr -> String.Join("", arr)) |> binToInt
-    
-    let subStartIdx = idx+15
-    
-    subStartIdx + length - 1
-
-parseOperatorType0 ("0000000000110111101000101001010010001001000000000".ToCharArray()) 0
-
-let parseOperatorType1 (arr : char array) idx =
-    let numSubPackets =
-        arr[idx..idx+10] |> (fun arr -> String.Join("", arr)) |> binToInt
-
-    idx + 11 + (numSubPackets * 11) - 1
+    //printfn "Literal %i - StartIdx: %i - EndIdx: %i" data' idx endIdx
+    data', endIdx
 
 type EndCondition =
-    | Count of int
-    | Bits of int
+    | RunUntilEnd
+    | Packets of int
 
-type X =
-    | Literal of int * int * int
-    | Operator of int * int * X list
-    | Noop
+type Packet =
+    | Literal of int64 * int64 * int64
+    | Operator of int64 * int64 * char * Packet list
 
-let parse (arr : char array) idx' =
-    let rec f idx vs =
-        let version = String(arr[idx..idx+2])
-        let typeid = String(arr[idx+3..idx+5])
+let rec parse (arr : char array) cond' idx' =
+    let rec f idx cond packets =
+        match cond with
+        | RunUntilEnd when idx >= arr.Length - 1 ->
+            //printfn "Ending - idx: %i - len: %i" idx (arr.Length - 1) 
+            List.rev packets, idx
+        | RunUntilEnd when arr[idx..] |> Array.forall ((=)'0') ->
+            List.rev packets, idx
+        | Packets left when left = 0 ->
+            List.rev packets, idx
+        | _ ->
+            let version = binToInt <| String(arr[idx..idx+2])
+            let typeid  = binToInt <| String(arr[idx+3..idx+5])
 
-        let (_,nextIdx) =
-            match typeid with
-            | "100" -> // typeid = 4 literal
-                let (literal, newIdx) = parseLiteral arr (idx+6)
-                printfn "%A" literal
-                let lit = Literal (binToInt version, binToInt typeid, literal)
-                (lit, newIdx)
-            | _ -> // typeid = 6 operator
-                let lengthTypeId = arr[idx+6]
-                match lengthTypeId with
-                | '0' ->
-                    let length = arr[idx+7..idx+7+14] |> (fun arr -> String.Join("", arr)) |> binToInt
-                    let cond = Bits length
-                    let newIdx = parseOperatorType0 arr (idx+7)
-                    Noop, newIdx
-                | '1' ->
-                    let newIdx = parseOperatorType1 arr (idx+7)
-                    Noop, newIdx
-            //| _ -> failwithf "%s" typeid
+            //printfn "Idx: %i/%i. Version: %s. Typeid: %s" idx arr.Length version typeid
 
-        printfn "NextIdx: %i" nextIdx
-        printfn "Length: %i" arr.Length
+            let (packet,nextIdx) =
+                match typeid with
+                | 4L ->
+                    let (literal, newIdx) = parseLiteral arr (idx+6)
+                    //printfn "Literal %A. NewIdx: %i" literal (newIdx)
+                    let lit = Literal (version, typeid, literal)
+                    (lit, newIdx)
+                | _ -> // operator
+                    let lengthTypeId = arr[idx+6]
+                    match lengthTypeId with
+                    | '0' ->
+                        let endOfLength = idx+7+14
+                        let length = arr[idx+7..endOfLength] |> toString |> binToInt |> int
+                        //printfn "Operator 0 - length: %i" length
+                        let newIdx = idx+7+14 + length + 1
+                        //printfn "Op0: Starting next itr at %i" (endOfLength+1)
+                        let children,_ = parse arr[endOfLength+1..endOfLength+length] RunUntilEnd 0
 
-        if (nextIdx >= arr.Length - 1) then
-            (version :: vs)
-        else
-            f nextIdx (version :: vs)
+                        Operator (version, typeid, lengthTypeId, children), newIdx
+                    | '1' ->
+                        let endOfLength = idx+7+10
+                        let numChildren =
+                            arr[idx+7..endOfLength] |> toString |> binToInt |> int
+                        //printfn "Operator 1 - numChildren: %i" numChildren
+                        //printfn "Op1: Starting next itr at %i" (idx+7+10+1)
+                        let children,nextIdx = parse arr[endOfLength+1..] (Packets numChildren) 0
+                        //printfn "Finished parsing op1"
+                        Operator (version, typeid, lengthTypeId, children), (endOfLength+nextIdx+1)
+                //| _ -> failwithf "%s" typeid
 
-    f idx' []
+            let newCond =
+                match cond with
+                | RunUntilEnd -> cond
+                | Packets i -> Packets (i-1)
+            
+            f nextIdx newCond (packet :: packets)
+
+    f idx' cond' []
 
 let parseString (s : string) =
     s.ToCharArray()
     |> Array.map conv
     |> (fun arr -> String.Join("", arr))
-    |> (fun s -> parse (s.ToCharArray()) 0)
+    |> (fun s -> parse (s.ToCharArray()) RunUntilEnd 0)
+    |> fst
 
-parseString data[0]
+let tree = parseString data[0]
 
-parseString "8A004A801A8002F478"
+let getVersions (tree : Packet) =
+    let rec f subTree =
+        match subTree with
+        | Literal (v,_,_) -> v
+        | Operator (v,_,_,children) ->
+            let childSums = children |> List.sumBy f
+            v + childSums
 
-data[0].ToCharArray()
-|> Array.map conv
+    f tree
 
-// 3 bits = packet version
-// 3 bits = packet type id
-// packet type id 4 = literal value
-//
-
-let ans1 = data
+let ans1 = getVersions tree[0]
 
 ans1
 
 /// Part 2
 
-let ans2 = data
+let calculateTree (tree : Packet) =
+    let rec f subTree =
+        match subTree with
+        | Literal (_,_,l) -> l
+        | Operator (_,typeid,_,children) ->
+            let childVals = children |> List.map f
+            match typeid with
+            | 0L -> List.sum childVals
+            | 1L -> List.reduce (*) childVals
+            | 2L -> List.min childVals
+            | 3L -> List.max childVals
+            | 5L -> if (childVals[0] > childVals[1]) then 1L else 0L
+            | 6L -> if (childVals[0] < childVals[1]) then 1L else 0L
+            | 7L -> if (childVals[0] = childVals[1]) then 1L else 0L
+
+    f tree
+
+let ans2 = calculateTree tree[0]
 
 ans2

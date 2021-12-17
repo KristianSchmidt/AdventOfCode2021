@@ -43,3 +43,26 @@ let ans1 =
     |> snd
 
 let ans2 = vels.Length
+
+
+// Doodles for a msarter way of doing it
+
+vels
+|> Array.map (fun (startingVel, lst) -> startingVel, lst |> List.maxBy snd)
+|> Array.maxBy (snd >> snd)
+
+let greaterThan (i : float) = ((float ty1) + (i*(i-1.))/2.) / i
+let lessThan    (i : float) = ((float ty2) + (i*(i-1.))/2.) / i
+
+// The starting vy values that will hit the area in interation i
+let yCandidates i =
+    let gt = Math.Ceiling(greaterThan i) |> int
+    let lt = Math.Floor(lessThan i) |> int
+    [|gt..lt|]
+
+let allYs = [|1..1000|] |> Array.collect (float >> yCandidates) |> Array.distinct
+
+allYs
+|> Array.iter (printfn "%i")
+
+allYs.Length

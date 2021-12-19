@@ -115,7 +115,7 @@ let findVec p1 p2 rotations locSource =
                          >> (fun c -> add (c,loc))
         
     let newRots = [i2;i1]
-    let newLoc = rotateRel0 (0,0,0) loc
+    let newLoc = rotateRel0 locSource loc
     let beaconsRel0 = j |> Array.map (rotateRel0 newLoc)
     newRots, newLoc, beaconsRel0
     

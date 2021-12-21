@@ -27,7 +27,7 @@ let example =
 
 type Axis = | X | Y | Z
 
-let rotate axis pos deg' (x,y,z) =
+let rotate (axis, pos, deg') (x,y,z) =
     let deg = if (deg' = 360) then 0 else deg'
     match axis,deg with
     | X,0   -> pos*x,y,z
@@ -43,7 +43,7 @@ let rotate axis pos deg' (x,y,z) =
     | Z,180 -> -x,-y,pos*z
     | Z,270 -> y,-x,pos*z
 
-let rotateRev (axis,pos,deg') coord = rotate axis pos (360-deg') coord
+let rotateRev (axis,pos,deg') coord = rotate (axis, pos, (360-deg')) coord
 
 let transforms =
     seq {
@@ -75,68 +75,57 @@ let allTransforms data =
 let sub ((x,y,z),(x',y',z')) = (x-x',y-y',z-z')
 let add ((x,y,z),(x',y',z')) = (x+x',y+y',z+z')
 
-let findLoc baseScanner newScanner =
-    let trials =
-        allTransforms newScanner
-        |> Array.map (fun (info,arr) -> info, arr, Array.allPairs baseScanner arr
-                                                   |> Array.map sub)
-
-    trials
-    |> Array.map (fun (info,arr,trial) -> info, arr, trial |> Array.countBy id |> Array.maxBy snd)
-    |> Array.maxBy ((fun (info,arr,trial) -> snd trial))
-
-
 let findLoc2 p1 p2 =
     seq {
         for (i1,i) in allTransforms p1 do
             for (i2,j) in allTransforms p2 do
-                yield (i1,i2,j,Array.allPairs i j
-                             |> Array.map sub
-                             |> Array.countBy id
-                             |> Array.maxBy snd)
+                yield (i1,i2,i,j,Array.allPairs i j
+                                 |> Array.map sub
+                                 |> Array.countBy id
+                                 |> Array.maxBy snd)
     }
     |> Array.ofSeq
 
-let applyRotations (xs : (Axis*int*int) list) loc =
-    xs |> List.fold (fun s t -> rotateRev t s) loc
-
-let findVec p1 p2 rotations locSource =
-    let (i1,i2,j,(loc,_)) =
+let findVec p1 p2 =
+    let (i1,i2,i,j,(loc,_)) =
         findLoc2 p1 p2
-        |> Array.filter (fun (i1,i2,_,(loc,cnt)) -> cnt >= 12)
-        |> Array.maxBy (fun (i1,i2,_,(loc,cnt)) -> cnt)
-
-    //findLoc2 p1 p2
-    //|> Array.filter (fun (i1,i2,_,(loc,cnt)) -> cnt >= 12)
-    //|> Array.iter (fun (i1,i2,_,(loc,cnt)) -> printfn "Rotation: %A %A" i1 i2)
-
-    let rotateRel0 loc = rotateRev i1
-                         >> applyRotations rotations
-                         >> (fun c -> add (c,loc))
+        |> Array.filter (fun (i1,i2,_,_,(loc,cnt)) -> cnt >= 12)
+        |> Array.head
         
-    let newRots = [i2;i1]
-    let newLoc = rotateRel0 locSource loc
-    let beaconsRel0 = j |> Array.map (rotateRel0 newLoc)
-    newRots, newLoc, beaconsRel0
+    let rotateToSource = rotate i2 >> rotateRev i1
+
+    rotateToSource,
+     rotateRev i1 loc (* in source orientation*),
+     p2 |> Array.map (rotateToSource) (* in source orientation*)
     
-//let loc0 = (0,0,0)
-//let (rot1, loc1, bec1) = findVec example[0] example[1] [] loc0
-//let (rot4, loc4, bec4) = findVec example[1] example[4] rot1 loc1
-//let (rot3, loc3, bec3) = findVec example[1] example[3] rot1 loc1
-//let (rot2, loc2, bec2) = findVec example[4] example[2] rot4 loc4
-
 let loc0 = (0,0,0)
-let (rot1, loc1, _) = findVec data[0] data[1] [] loc0
-let (rot9, loc9, _) = findVec data[0] data[9] [] loc0
-let (rot141, loc141, bec141) = findVec data[1] data[14] rot1 loc1
-let (rot142, loc142, bec142) = findVec data[9] data[14] rot9 loc9
+let (s1to0, loc1, bec1') = findVec example[0] example[1]
+let bec1 = bec1' |> Array.map (fun c -> add(loc1, c))
+let (s4to1, loc4', bec4') = findVec example[1] example[4]
+let (s3to1, loc3', bec3') = findVec example[1] example[3]
+let (s2to4, loc2', bec2') = findVec example[4] example[2]
 
+let loc4 = add (loc1,s1to0 loc4')
+let bec4 = bec4' |> Array.map (fun b -> add(loc4, (s1to0) b))
 
+let loc3 = add (loc1,s1to0 loc3')
+let bec3 = bec3' |> Array.map (fun b -> add(loc3, (s1to0) b))
+
+let loc2 = add (loc4,(s4to1 >> s1to0) loc2')
+let bec2 = bec2' |> Array.map (fun b -> add(loc2, (s4to1 >> s1to0) b))
+
+Array.concat [|
+    example[0]; bec1; bec2; bec3; bec4
+|]
+|> Array.distinct
+|> Array.length
+
+type Rotator = (int*int*int) -> (int*int*int)
 
 let solve data (pairMap : Map<int,int array>) =
-    let rec f visited (locs : Map<int,int*int*int>) (rots : Map<int,(Axis*int*int) list>) beacons =
+    let rec f visited (locs : Map<int,int*int*int>) (rots : Map<int,Rotator>) beacons =
         if (Set.count visited = Array.length data) then
-            beacons
+            locs, beacons
         else
             // find something from visited's pairMap that has
             // not been seen yet
@@ -148,31 +137,25 @@ let solve data (pairMap : Map<int,int array>) =
                                            |> Array.map (fun x -> (c,x)))
                 |> Array.head
 
-            let st =
-                visited
-                |> Set.toArray
-                |> Array.collect (fun c -> pairMap[c]
-                                           |> Array.filter (fun x -> Set.contains x visited |> not)
-                                           |> Array.map (fun x -> (c,x)))
-                |> Array.filter (snd >> ((=)target))
-
-
-            for (s,t) in st do
-                let (_, loc, _) = findVec data[s] data[t] rots[s] locs[s]
-                printfn "%i->%i: %A" s t loc
-
             printfn "Source,target = (%i,%i)" source target
-            let (rot, loc, bec) = findVec data[source] data[target] rots[source] locs[source]
+            let (rotToSource, loc', bec) = findVec data[source] data[target]
+
+            let rotTo0 = rotToSource >> rots[source]
             
-            let newBecs = Set.union beacons (Set.ofArray bec)
+            let loc = rots[source] loc' |> (fun l -> add(locs[source], l))
+            let becsIn0 = bec |> Array.map rots[source] |> Array.map (fun b -> add(loc,b))
+
+            printfn "Loc %i: %A" target loc
+            
+            let newBecs = Set.union beacons (Set.ofArray becsIn0)
             let newLoc = Map.add target loc locs
-            let newRots = Map.add target rot rots
+            let newRots = Map.add target rotTo0 rots
             let newVisited = Set.add target visited
             f newVisited newLoc newRots newBecs
 
     let initVisited = set [0]
     let initLocs = Map.ofList [0,(0,0,0)]
-    let initRots = Map.ofList [0,[]]
+    let initRots = Map.ofList [0,id]
     let initBecs = Set.ofArray data[0]
     f initVisited initLocs initRots initBecs
 
@@ -219,9 +202,6 @@ let pairMapExample =
     |> Map.ofArray
 
 solve example pairMapExample
-|> Set.toArray
-|> Array.sort
-|> Array.iter (printfn "%A")
 
 let pairMap =
     allPairsData
@@ -230,26 +210,25 @@ let pairMap =
     |> Array.map (fun (c,arr) -> c,arr |> Array.map snd)
     |> Map.ofArray
 
-let pairMap2 =
-    allPairsData
-    |> Array.collect (fun (x,y,_) -> [|(x,y)|])
-    |> Array.groupBy fst
-    |> Array.map (fun (c,arr) -> c,arr |> Array.map snd)
-    |> Map.ofArray
-
-solve data pairMap
-|> Set.count
-    
 // 605 too high
 
-data[0]
+let (locs,solved) = solve data pairMap
 
-let ans1 = data
+let ans1 = solved |> Set.count
 
 ans1
 
 /// Part 2
 
-let ans2 = data
+let man (x,y,z) (x2,y2,z2) = abs (x-x2) + abs (y-y2) + abs (z-z2)
+
+let ans2 =
+    let arr = 
+        Map.values locs
+        |> Array.ofSeq
+    
+    Array.allPairs arr arr
+    |> Array.map (fun (a,b) -> man a b)
+    |> Array.max
 
 ans2
